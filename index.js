@@ -10,7 +10,6 @@ client.on('ready', () => {
   console.log(`Bot is online als ${client.user.tag}`);
 });
 
-// Commando om panel te sturen
 client.on('messageCreate', async (message) => {
   if (message.content === '!ticketpanel') {
     const embed = new EmbedBuilder()
@@ -29,42 +28,81 @@ client.on('messageCreate', async (message) => {
   }
 });
 
-// Ticket aanmaken
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const onderwerp = {
+  const onderwerpMap = {
     vragen: 'Vragen',
     partner: 'Partner',
     staff: 'Staff Sollicitatie',
     dev: 'Dev Sollicitatie'
-  }[interaction.customId];
+  };
 
-  const ticketName = `ticket-${ticketCount.toString().padStart(3, '0')}`;
-  ticketCount++;
+  if (onderwerpMap[interaction.customId]) {
+    const onderwerp = onderwerpMap[interaction.customId];
+    const ticketName = `ticket-${ticketCount.toString().padStart(3, '0')}`;
+    ticketCount++;
 
-  const channel = await interaction.guild.channels.create({
-    name: ticketName,
-    type: 0,
-    permissionOverwrites: [
-      {
-        id: interaction.guild.id,
-        deny: [PermissionsBitField.Flags.ViewChannel]
-      },
-      {
-        id: interaction.user.id,
-        allow: [PermissionsBitField.Flags.ViewChannel]
-      }
-    ]
-  });
+    const channel = await interaction.guild.channels.create({
+      name: ticketName,
+      type: 0,
+      permissionOverwrites: [
+        {
+          id: interaction.guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+          id: interaction.user.id,
+          allow: [PermissionsBitField.Flags.ViewChannel]
+        }
+      ]
+    });
 
-  const embed = new EmbedBuilder()
-    .setTitle(`📩 ${onderwerp} Ticket`)
-    .setDescription(`Welkom ${interaction.user}, leg hier je ${onderwerp.toLowerCase()} uit.`)
-    .setColor(0x5865f2);
+    const embed = new EmbedBuilder()
+      .setTitle(`📩 ${onderwerp} Ticket`)
+      .setDescription(`Welkom ${interaction.user}, leg hier je ${onderwerp.toLowerCase()} uit.`)
+      .setColor(0x5865f2);
 
-  channel.send({ content: `${interaction.user}`, embeds: [embed] });
-  interaction.reply({ content: `Je ${onderwerp} ticket is aangemaakt: ${channel}`, ephemeral: true });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('close').setLabel('🔒 Sluiten').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('delete').setLabel('🗑️ Verwijderen').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('transcript').setLabel('📄 Transcript').setStyle(ButtonStyle.Primary)
+    );
+
+    channel.send({ content: `${interaction.user}`, embeds: [embed], components: [row] });
+    interaction.reply({ content: `Je ${onderwerp} ticket is aangemaakt: ${channel}`, ephemeral: true });
+  }
+
+  // Ticket sluiten
+  if (interaction.customId === 'close') {
+    await interaction.channel.permissionOverwrites.edit(interaction.user.id, {
+      ViewChannel: false
+    });
+    interaction.reply({ content: 'Ticket gesloten 🔒', ephemeral: true });
+  }
+
+  // Ticket verwijderen
+  if (interaction.customId === 'delete') {
+    interaction.reply({ content: 'Ticket wordt verwijderd 🗑️', ephemeral: true });
+    setTimeout(() => {
+      interaction.channel.delete().catch(console.error);
+    }, 2000);
+  }
+
+  // Transcript maken
+  if (interaction.customId === 'transcript') {
+    const messages = await interaction.channel.messages.fetch({ limit: 100 });
+    const transcript = messages
+      .reverse()
+      .map(m => `${m.author.tag}: ${m.content}`)
+      .join('\n');
+
+    interaction.user.send(`📄 Transcript van ${interaction.channel.name}:\n\n${transcript}`).catch(() => {
+      interaction.reply({ content: 'Kon transcript niet verzenden (DMs uitgeschakeld)', ephemeral: true });
+    });
+
+    interaction.reply({ content: 'Transcript verzonden 📄', ephemeral: true });
+  }
 });
 
 client.login(process.env.TOKEN);
