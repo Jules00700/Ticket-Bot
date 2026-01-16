@@ -32,7 +32,7 @@ client.on("ready", () => {
 });
 
 client.on("messageCreate", async (message) => {
-  if (message.content === "/ticket setup") {
+  if (message.content === "!ticketsetup") {
     const embed = new EmbedBuilder()
       .setTitle("🎫 Ticket Systeem")
       .setDescription("Klik op een knop hieronder om een ticket te openen")
