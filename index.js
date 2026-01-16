@@ -6,7 +6,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  PermissionsBitField
+  PermissionsBitField,
+  ChannelType
 } = require("discord.js");
 
 const client = new Client({
@@ -19,32 +20,19 @@ const client = new Client({
 });
 
 // ─────────────────────────────────────────────
-// INSTELLINGEN (HIER KAN JE ALLES AANPASSEN)
+// INSTELLINGEN
 // ─────────────────────────────────────────────
-
-// Support rollen die toegang hebben tot tickets
-const SUPPORT_ROLES = [
-  "1461473605052399717", // Support role ID
-  "987654321098765432"  // Extra role ID (optioneel)
-];
-
-// Kanaal waar transcripts naartoe worden gestuurd
-const TRANSCRIPT_LOG_CHANNEL = "1461764185896779776"; // Log kanaal ID
+const SUPPORT_ROLES = ["1461473605052399717"];
+const TRANSCRIPT_LOG_CHANNEL = "1461764185896779776";
 
 let ticketCount = 1;
 
-// ─────────────────────────────────────────────
-// BOT ONLINE
-// ─────────────────────────────────────────────
 client.on("ready", () => {
   console.log(`Bot is online als ${client.user.tag}`);
 });
 
-// ─────────────────────────────────────────────
-// TICKET PANEL COMMAND
-// ─────────────────────────────────────────────
 client.on("messageCreate", async (message) => {
-  if (message.content === "!ticketpanel") {
+  if (message.content === "/ticket setup") {
     const embed = new EmbedBuilder()
       .setTitle("🎫 Ticket Systeem")
       .setDescription("Klik op een knop hieronder om een ticket te openen")
@@ -61,137 +49,127 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// ─────────────────────────────────────────────
-// BUTTON INTERACTIONS
-// ─────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
-  const onderwerpMap = {
-    vragen: "Vragen",
-    partner: "Partner",
-    staff: "Staff Sollicitatie",
-    dev: "Dev Sollicitatie"
-  };
+  try {
+    const onderwerpMap = {
+      vragen: "Vragen",
+      partner: "Partner",
+      staff: "Staff Sollicitatie",
+      dev: "Dev Sollicitatie"
+    };
 
-  // ─────────────────────────────────────────────
-  // TICKET AANMAKEN
-  // ─────────────────────────────────────────────
-  if (onderwerpMap[interaction.customId]) {
-    const onderwerp = onderwerpMap[interaction.customId];
-    const ticketName = `ticket-${ticketCount.toString().padStart(3, "0")}`;
-    ticketCount++;
+    if (onderwerpMap[interaction.customId]) {
+      await interaction.deferReply({ ephemeral: true });
 
-    const overwrites = [
-      {
-        id: interaction.guild.id,
-        deny: [PermissionsBitField.Flags.ViewChannel]
-      },
-      {
-        id: interaction.user.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
-      }
-    ];
+      const onderwerp = onderwerpMap[interaction.customId];
+      const ticketName = `ticket-${ticketCount.toString().padStart(3, "0")}`;
+      ticketCount++;
 
-    SUPPORT_ROLES.forEach(roleId => {
-      overwrites.push({
-        id: roleId,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
+      const overwrites = [
+        {
+          id: interaction.guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        {
+          id: interaction.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages
+          ]
+        },
+        ...SUPPORT_ROLES.map(roleId => ({
+          id: roleId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages
+          ]
+        }))
+      ];
+
+      const channel = await interaction.guild.channels.create({
+        name: ticketName,
+        type: ChannelType.GuildText,
+        permissionOverwrites: overwrites
       });
-    });
 
-    const channel = await interaction.guild.channels.create({
-      name: ticketName,
-      type: 0,
-      permissionOverwrites: overwrites
-    });
+      const embed = new EmbedBuilder()
+        .setTitle(`📩 ${onderwerp} Ticket`)
+        .setDescription(`Welkom ${interaction.user}, leg hier je ${onderwerp.toLowerCase()} uit.`)
+        .setColor(0x5865f2);
 
-    const embed = new EmbedBuilder()
-      .setTitle(`📩 ${onderwerp} Ticket`)
-      .setDescription(`Welkom ${interaction.user}, leg hier je ${onderwerp.toLowerCase()} uit.`)
-      .setColor(0x5865f2);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("close").setLabel("🔒 Sluiten").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("delete").setLabel("🗑️ Verwijderen").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("transcript").setLabel("📄 Transcript").setStyle(ButtonStyle.Primary)
+      );
 
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("close").setLabel("🔒 Sluiten").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("delete").setLabel("🗑️ Verwijderen").setStyle(ButtonStyle.Danger),
-      new ButtonBuilder().setCustomId("transcript").setLabel("📄 Transcript").setStyle(ButtonStyle.Primary)
-    );
-
-    channel.send({
-      content: `${interaction.user} <@&${SUPPORT_ROLES[0]}>`,
-      embeds: [embed],
-      components: [row]
-    });
-
-    interaction.reply({
-      content: `Je ${onderwerp} ticket is aangemaakt: ${channel}`,
-      ephemeral: true
-    });
-  }
-
-  // ─────────────────────────────────────────────
-  // TICKET SLUITEN (alleen support kan nog typen)
-  // ─────────────────────────────────────────────
-  if (interaction.customId === "close") {
-    const overwrites = [];
-
-    overwrites.push({
-      id: interaction.guild.id,
-      deny: [PermissionsBitField.Flags.ViewChannel]
-    });
-
-    SUPPORT_ROLES.forEach(roleId => {
-      overwrites.push({
-        id: roleId,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages
-        ]
+      await channel.send({
+        content: `${interaction.user} <@&${SUPPORT_ROLES[0]}>`,
+        embeds: [embed],
+        components: [row]
       });
-    });
 
-    overwrites.push({
-      id: interaction.user.id,
-      deny: [PermissionsBitField.Flags.SendMessages]
-    });
-
-    await interaction.channel.permissionOverwrites.set(overwrites);
-
-    interaction.reply({ content: "Ticket gesloten 🔒", ephemeral: true });
-  }
-
-  // ─────────────────────────────────────────────
-  // TICKET VERWIJDEREN
-  // ─────────────────────────────────────────────
-  if (interaction.customId === "delete") {
-    interaction.reply({ content: "Ticket wordt verwijderd 🗑️", ephemeral: true });
-    setTimeout(() => interaction.channel.delete().catch(() => {}), 2000);
-  }
-
-  // ─────────────────────────────────────────────
-  // TRANSCRIPT NAAR LOG KANAAL
-  // ─────────────────────────────────────────────
-  if (interaction.customId === "transcript") {
-    const messages = await interaction.channel.messages.fetch({ limit: 100 });
-    const transcript = messages
-      .reverse()
-      .map(m => `${m.author.tag}: ${m.content}`)
-      .join("\n");
-
-    const logChannel = interaction.guild.channels.cache.get(TRANSCRIPT_LOG_CHANNEL);
-    if (logChannel) {
-      logChannel.send({
-        content: `📄 Transcript van **${interaction.channel.name}**:\n\`\`\`\n${transcript}\n\`\`\``
-      });
+      await interaction.editReply({ content: `Je ${onderwerp} ticket is aangemaakt: ${channel}` });
     }
 
-    interaction.reply({ content: "Transcript opgeslagen 📄", ephemeral: true });
+    if (interaction.customId === "close") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const overwrites = [
+        {
+          id: interaction.guild.id,
+          deny: [PermissionsBitField.Flags.ViewChannel]
+        },
+        ...SUPPORT_ROLES.map(roleId => ({
+          id: roleId,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages
+          ]
+        })),
+        {
+          id: interaction.user.id,
+          deny: [PermissionsBitField.Flags.SendMessages]
+        }
+      ];
+
+      await interaction.channel.permissionOverwrites.set(overwrites);
+      await interaction.editReply({ content: "Ticket gesloten 🔒" });
+    }
+
+    if (interaction.customId === "delete") {
+      await interaction.deferReply({ ephemeral: true });
+      await interaction.editReply({ content: "Ticket wordt verwijderd 🗑️" });
+      setTimeout(() => interaction.channel.delete().catch(() => {}), 2000);
+    }
+
+    if (interaction.customId === "transcript") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const messages = await interaction.channel.messages.fetch({ limit: 100 });
+      const transcript = messages
+        .reverse()
+        .map(m => `${m.author.tag}: ${m.content}`)
+        .join("\n");
+
+      const logChannel = interaction.guild.channels.cache.get(TRANSCRIPT_LOG_CHANNEL);
+      if (logChannel) {
+        await logChannel.send({
+          content: `📄 Transcript van **${interaction.channel.name}**:\n\`\`\`\n${transcript}\n\`\`\``
+        });
+      }
+
+      await interaction.editReply({ content: "Transcript opgeslagen 📄" });
+    }
+  } catch (err) {
+    console.error("Interaction error:", err);
+    if (interaction.deferred || interaction.replied) {
+      interaction.editReply({ content: "Er ging iets mis bij deze actie." });
+    } else {
+      interaction.reply({ content: "Er ging iets mis bij deze actie.", ephemeral: true });
+    }
   }
 });
 
