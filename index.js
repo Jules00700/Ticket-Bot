@@ -10,7 +10,7 @@ const {
   ChannelType
 } = require("discord.js");
 
-const { token } = require("./config.json"); // ← TOKEN VANUIT config.json
+const { token } = require("./config.json");
 
 const client = new Client({
   intents: [
@@ -25,12 +25,13 @@ const client = new Client({
 // INSTELLINGEN
 // ─────────────────────────────────────────────
 
-// Support roles per onderwerp (ELK onderwerp 2 roles)
+// Support roles per onderwerp (JIJ vult de IDs zelf in)
 const SUPPORT_MAP = {
   vragen: ["928423586803355700"],
   partner: ["928423586803355700"],
   staff: ["1462155480410620159"],
-  dev: ["1462155480410620159"]
+  dev: ["1462155480410620159"],
+  klachten: ["1462155480410620159"] // ← nieuw onderwerp
 };
 
 // Transcript kanalen
@@ -38,19 +39,31 @@ const TRANSCRIPT_LOG_CHANNELS = [
   "1462151483720995182"
 ];
 
-// Category mapping per onderwerp
+// Category mapping per onderwerp (JIJ vult de IDs zelf in)
 const CATEGORY_MAP = {
-  vragen: "1462144801435815957",   // ← category ID voor vragen
-  partner: "1462152699050197095",  // ← category ID voor partner
-  staff: "1462157854952652983",     // ← category ID voor unban/rank
-  dev: "1462158044505964647"
+  vragen: "1462144801435815957",
+  partner: "1462152699050197095",
+  staff: "1462157854952652983",
+  dev: "1462158044505964647",
+  klachten: "1462189172264669317" // ← nieuw onderwerp
 };
 
-let ticketCount = 1;
+// Aparte counters per onderwerp
+let ticketCounters = {
+  vragen: 1,
+  partner: 1,
+  staff: 1,
+  dev: 1,
+  klachten: 1
+};
 
 client.on("ready", () => {
   console.log(`Bot is online als ${client.user.tag}`);
 });
+
+// ─────────────────────────────────────────────
+// TICKET SETUP
+// ─────────────────────────────────────────────
 
 client.on("messageCreate", async (message) => {
   if (message.content === "!ticketsetup") {
@@ -63,12 +76,17 @@ client.on("messageCreate", async (message) => {
       new ButtonBuilder().setCustomId("vragen").setLabel("Vragen").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("partner").setLabel("Partner").setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId("staff").setLabel("Unban Aanvraag").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("dev").setLabel("Rank Aanvraag").setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId("dev").setLabel("Rank Aanvraag").setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId("klachten").setLabel("Klachten").setStyle(ButtonStyle.Primary)
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
   }
 });
+
+// ─────────────────────────────────────────────
+// INTERACTIONS
+// ─────────────────────────────────────────────
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
@@ -78,15 +96,21 @@ client.on("interactionCreate", async (interaction) => {
       vragen: "Vragen",
       partner: "Partner",
       staff: "Unban Aanvraag",
-      dev: "Rank Aanvraag"
+      dev: "Rank Aanvraag",
+      klachten: "Klachten"
     };
 
+    // ─────────────────────────────────────────────
+    // TICKET AANMAKEN
+    // ─────────────────────────────────────────────
     if (onderwerpMap[interaction.customId]) {
       await interaction.deferReply({ ephemeral: true });
 
       const onderwerp = onderwerpMap[interaction.customId];
-      const ticketName = `ticket-${ticketCount.toString().padStart(3, "0")}`;
-      ticketCount++;
+
+      // Per onderwerp eigen teller
+      const count = ticketCounters[interaction.customId]++;
+      const ticketName = `${interaction.customId}-${count.toString().padStart(3, "0")}`;
 
       const supportRoles = SUPPORT_MAP[interaction.customId];
 
@@ -114,7 +138,7 @@ client.on("interactionCreate", async (interaction) => {
       const channel = await interaction.guild.channels.create({
         name: ticketName,
         type: ChannelType.GuildText,
-        parent: CATEGORY_MAP[interaction.customId], // ← juiste category
+        parent: CATEGORY_MAP[interaction.customId],
         permissionOverwrites: overwrites
       });
 
@@ -124,53 +148,65 @@ client.on("interactionCreate", async (interaction) => {
         .setColor(0x5865f2);
 
       const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("claim").setLabel("📌 Claim").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("close").setLabel("🔒 Sluiten").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("delete").setLabel("🗑️ Verwijderen").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("transcript").setLabel("📄 Transcript").setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId("transcript").setLabel("📄 Transcript").setStyle(ButtonStyle.Success)
       );
 
       await channel.send({
-        content: `${interaction.user} <@&${supportRoles[0]}> <@&${supportRoles[1]}>`,
+        content: `${interaction.user} <@&${supportRoles[0]}>`,
         embeds: [embed],
         components: [row]
       });
 
       await interaction.editReply({ content: `Je ${onderwerp} ticket is aangemaakt: ${channel}` });
+      return;
     }
 
+    // ─────────────────────────────────────────────
+    // CLAIM
+    // ─────────────────────────────────────────────
+    if (interaction.customId === "claim") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const claimer = interaction.user.username;
+      const oldName = interaction.channel.name;
+
+      await interaction.channel.setName(`${oldName}-claimed-by-${claimer}`);
+
+      await interaction.editReply({ content: `Je hebt dit ticket geclaimd.` });
+      return;
+    }
+
+    // ─────────────────────────────────────────────
+    // CLOSE
+    // ─────────────────────────────────────────────
     if (interaction.customId === "close") {
       await interaction.deferReply({ ephemeral: true });
 
-      const supportRoles = SUPPORT_MAP[interaction.customId] || [];
+      await interaction.channel.permissionOverwrites.edit(interaction.user.id, {
+        SendMessages: false
+      });
 
-      const overwrites = [
-        {
-          id: interaction.guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        ...supportRoles.map(roleId => ({
-          id: roleId,
-          allow: [
-            PermissionsBitField.Flags.ViewChannel,
-            PermissionsBitField.Flags.SendMessages
-          ]
-        })),
-        {
-          id: interaction.user.id,
-          deny: [PermissionsBitField.Flags.SendMessages]
-        }
-      ];
-
-      await interaction.channel.permissionOverwrites.set(overwrites);
       await interaction.editReply({ content: "Ticket gesloten 🔒" });
+      return;
     }
 
+    // ─────────────────────────────────────────────
+    // DELETE
+    // ─────────────────────────────────────────────
     if (interaction.customId === "delete") {
       await interaction.deferReply({ ephemeral: true });
+
       await interaction.editReply({ content: "Ticket wordt verwijderd 🗑️" });
       setTimeout(() => interaction.channel.delete().catch(() => {}), 2000);
+      return;
     }
 
+    // ─────────────────────────────────────────────
+    // TRANSCRIPT
+    // ─────────────────────────────────────────────
     if (interaction.customId === "transcript") {
       await interaction.deferReply({ ephemeral: true });
 
@@ -180,7 +216,6 @@ client.on("interactionCreate", async (interaction) => {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join("\n");
 
-      // Transcript sturen naar ALLE ingestelde kanalen
       for (const channelId of TRANSCRIPT_LOG_CHANNELS) {
         const logChannel = interaction.guild.channels.cache.get(channelId);
         if (logChannel) {
@@ -191,7 +226,9 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       await interaction.editReply({ content: "Transcript opgeslagen 📄" });
+      return;
     }
+
   } catch (err) {
     console.error("Interaction error:", err);
     if (interaction.deferred || interaction.replied) {
@@ -202,4 +239,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(token); // ← LOGIN MET TOKEN UIT config.json
+client.login(token);
