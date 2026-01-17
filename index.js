@@ -24,8 +24,27 @@ const client = new Client({
 // ─────────────────────────────────────────────
 // INSTELLINGEN
 // ─────────────────────────────────────────────
-const SUPPORT_ROLES = ["1461473605052399717"];
-const TRANSCRIPT_LOG_CHANNEL = "1461764185896779776";
+
+// Support roles per onderwerp (ELK onderwerp 2 roles)
+const SUPPORT_MAP = {
+  vragen: ["928423586803355700"],
+  partner: ["928423586803355700"],
+  staff: ["1462155480410620159"],
+  dev: ["1462155480410620159"]
+};
+
+// Transcript kanalen
+const TRANSCRIPT_LOG_CHANNELS = [
+  "1462151483720995182"
+];
+
+// Category mapping per onderwerp
+const CATEGORY_MAP = {
+  vragen: "1462144801435815957",   // ← category ID voor vragen
+  partner: "1462152699050197095",  // ← category ID voor partner
+  staff: "1462157854952652983",     // ← category ID voor unban/rank
+  dev: "1462158044505964647"
+};
 
 let ticketCount = 1;
 
@@ -43,8 +62,8 @@ client.on("messageCreate", async (message) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("vragen").setLabel("Vragen").setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId("partner").setLabel("Partner").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId("staff").setLabel("Staff Sollicitatie").setStyle(ButtonStyle.Success),
-      new ButtonBuilder().setCustomId("dev").setLabel("Dev Sollicitatie").setStyle(ButtonStyle.Danger)
+      new ButtonBuilder().setCustomId("staff").setLabel("Unban Aanvraag").setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("dev").setLabel("Rank Aanvraag").setStyle(ButtonStyle.Danger)
     );
 
     message.channel.send({ embeds: [embed], components: [row] });
@@ -58,8 +77,8 @@ client.on("interactionCreate", async (interaction) => {
     const onderwerpMap = {
       vragen: "Vragen",
       partner: "Partner",
-      staff: "Staff Sollicitatie",
-      dev: "Dev Sollicitatie"
+      staff: "Unban Aanvraag",
+      dev: "Rank Aanvraag"
     };
 
     if (onderwerpMap[interaction.customId]) {
@@ -68,6 +87,8 @@ client.on("interactionCreate", async (interaction) => {
       const onderwerp = onderwerpMap[interaction.customId];
       const ticketName = `ticket-${ticketCount.toString().padStart(3, "0")}`;
       ticketCount++;
+
+      const supportRoles = SUPPORT_MAP[interaction.customId];
 
       const overwrites = [
         {
@@ -81,7 +102,7 @@ client.on("interactionCreate", async (interaction) => {
             PermissionsBitField.Flags.SendMessages
           ]
         },
-        ...SUPPORT_ROLES.map(roleId => ({
+        ...supportRoles.map(roleId => ({
           id: roleId,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
@@ -93,6 +114,7 @@ client.on("interactionCreate", async (interaction) => {
       const channel = await interaction.guild.channels.create({
         name: ticketName,
         type: ChannelType.GuildText,
+        parent: CATEGORY_MAP[interaction.customId], // ← juiste category
         permissionOverwrites: overwrites
       });
 
@@ -108,7 +130,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       await channel.send({
-        content: `${interaction.user} <@&${SUPPORT_ROLES[0]}>`,
+        content: `${interaction.user} <@&${supportRoles[0]}> <@&${supportRoles[1]}>`,
         embeds: [embed],
         components: [row]
       });
@@ -119,12 +141,14 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.customId === "close") {
       await interaction.deferReply({ ephemeral: true });
 
+      const supportRoles = SUPPORT_MAP[interaction.customId] || [];
+
       const overwrites = [
         {
           id: interaction.guild.id,
           deny: [PermissionsBitField.Flags.ViewChannel]
         },
-        ...SUPPORT_ROLES.map(roleId => ({
+        ...supportRoles.map(roleId => ({
           id: roleId,
           allow: [
             PermissionsBitField.Flags.ViewChannel,
@@ -156,11 +180,14 @@ client.on("interactionCreate", async (interaction) => {
         .map(m => `${m.author.tag}: ${m.content}`)
         .join("\n");
 
-      const logChannel = interaction.guild.channels.cache.get(TRANSCRIPT_LOG_CHANNEL);
-      if (logChannel) {
-        await logChannel.send({
-          content: `📄 Transcript van **${interaction.channel.name}**:\n\`\`\`\n${transcript}\n\`\`\``
-        });
+      // Transcript sturen naar ALLE ingestelde kanalen
+      for (const channelId of TRANSCRIPT_LOG_CHANNELS) {
+        const logChannel = interaction.guild.channels.cache.get(channelId);
+        if (logChannel) {
+          await logChannel.send({
+            content: `📄 Transcript van **${interaction.channel.name}**:\n\`\`\`\n${transcript}\n\`\`\``
+          });
+        }
       }
 
       await interaction.editReply({ content: "Transcript opgeslagen 📄" });
