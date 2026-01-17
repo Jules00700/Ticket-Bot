@@ -10,6 +10,8 @@ const {
   ChannelType
 } = require("discord.js");
 
+const { token } = require("./config.json"); // ← TOKEN VANUIT config.json
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -173,4 +175,4 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.login(process.env.TOKEN);
+client.login(token); // ← LOGIN MET TOKEN UIT config.json
